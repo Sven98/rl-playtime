@@ -1,6 +1,4 @@
 const fs = require("fs");
-var _ = require("lodash");
-
 var player_map = {};
 var data_map = {};
 
