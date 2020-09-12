@@ -9,9 +9,10 @@ Finished on: 08.09.2020
 const fetch = require("node-fetch");
 const fs = require("fs");
 var _ = require("lodash");
-
+let steam_calls = 0;
 var player_map = {};
 var data_map = {};
+var logs_enabled = true;
 
 //Load existing data
 if (fs.existsSync("./data/player_map.json")) {
@@ -24,10 +25,11 @@ if (fs.existsSync("./data/data.json")) {
   data_map = JSON.parse(content);
 }
 
-let steam_calls = 0;
 
-const KEY = require("../token.json").steam_key;
-const APPID = "[252950]";
+
+const STEAM_KEY = require("../token.json").steam_key;
+const BC_KEY = require("../token.json").ballchasing_key;
+const APPID = "[252950]"; // Rocket League ID
 const STEAM = "steam";
 const RANKS = [
   "unranked",
@@ -52,35 +54,60 @@ const RANKS = [
   "grand-champion",
 ];
 
-var logs_enabled = true;
+
 
 async function getPlaytime(_id) {
   if (player_map[_id] != undefined) {
-    if (logs_enabled) console.log("Player is already mapped and has an entry.")
+    if (logs_enabled) {
+      console.log(
+        "Player is already mapped and has an entry."
+      );
+    }
     return undefined;
   }
 
   steam_calls++;
 
   return fetch(
-    `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${KEY}&input_json={"appids_filter":${APPID}, "steamid":${_id}, "include_appinfo":1}`
+    `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${STEAM_KEY}&input_json={"appids_filter":${APPID}, "steamid":${_id}, "include_appinfo":1}`
   )
     .then((data) => {
       return data.json();
     })
     .then((json) => {
-      if (_.isEmpty(json.response) && logs_enabled) {
-        console.log(
-          "Steam answered with an empty object. Either the rate limit is reached or the profile is private. Please try again in 24 hours. (Or at 00:00)"
-        );
+
+      if (!json.response.games) {
+        if (logs_enabled) {
+          console.log(
+            "Rocket League does not exist in this user profile."
+          );
+        }
+        return undefined;
       }
 
-      if (!json.response.games) return undefined;
-      if (json.response.games[0].playtime_forever < 60)
-        throw Error("The users profile may be private");
-      console.log(Math.round(json.response.games[0].playtime_forever / 60) + " hours on record");
+      if (_.isEmpty(json.response)) {
+        if (logs_enabled) {
+          console.log(
+            "Steam answered with an empty object. Either the rate limit is reached or the profile is set to private."
+          );
+        }
+        return undefined;
+      }
+
+      if (json.response.games[0].playtime_forever < 60) {
+        if (logs_enabled) {
+          console.log(
+            "Playtime is less than the treshhold."
+          );
+        }
+        return undefined;
+      }
+
+      let playtime = json.response.games[0].playtime_forever / 60;
+
+      console.log(Math.round(playtime) + " hours on record");
       player_map[_id] = _id;
-      return json.response.games[0].playtime_forever / 60;
+      return playtime;
     })
     .catch((e) => {
       if (logs_enabled) {
@@ -94,7 +121,7 @@ async function setDataByRank(_rank) {
     let data = await fetch(
       `https://ballchasing.com/api/replays?playlist=ranked-doubles&min-rank=${_rank}&max-rank=${_rank}&count=200`,
       {
-        headers: { Authorization: "g3ZAMQRS1ggyhwJx3Z5lxQ8XIxuyv9QS7mwCE24n" },
+        headers: { Authorization: BC_KEY },
       }
     );
     let json = await data.json();
@@ -109,7 +136,7 @@ async function setDataByRank(_rank) {
             if (!data_map[_rank]) data_map[_rank] = [];
             if (playtime) data_map[_rank].push(playtime);
           } else {
-            if (logs_enabled) console.log("Player not on STEAM");
+            if (logs_enabled) console.log("Player not on Steam.");
           }
         } catch (e) {
           if (logs_enabled) {
